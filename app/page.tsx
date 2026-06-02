@@ -213,6 +213,9 @@ export default function HomePage() {
         <p className="mb-3 text-sm uppercase tracking-[0.4em] text-slate-400">Private card battle</p>
         <h1 className="text-5xl font-black">Lost Expeditions</h1>
         <p className="mt-4 text-lg text-slate-300">Create a private room, send the link to your wife, and play as guests.</p>
+        <p className="mt-3 rounded-xl border border-emerald-200/20 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-100">
+          New: local play lets two nearby phones pair over the same hotspot/Wi‑Fi without Supabase or internet.
+        </p>
         {!isSupabaseConfigured && (
           <p className="mt-3 rounded-xl border border-amber-200/20 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">
             Supabase is not set up yet, so online rooms are disabled for now. The demo still works locally.
@@ -220,6 +223,9 @@ export default function HomePage() {
         )}
       </div>
       <div className="flex flex-wrap justify-center gap-3">
+        <Link href="/local" className="rounded-2xl bg-emerald-200 px-8 py-4 font-bold text-slate-950 shadow-xl">
+          Play Offline Nearby
+        </Link>
         {isSupabaseConfigured ? (
           <button onClick={openJoinForm} className="rounded-2xl bg-amber-200 px-8 py-4 font-bold text-slate-950 shadow-xl">
             Join Room
