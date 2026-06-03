@@ -8,6 +8,7 @@ import type { GameState, Player } from "@/lib/game/types";
 import { GameBoard } from "@/components/GameBoard";
 import { playRoomReadyChime } from "@/lib/sound";
 import { readStoredBoolean, SOUND_ENABLED_KEY } from "@/lib/preferences";
+import { rememberRoomCode } from "@/lib/room-history";
 
 type GameRow = {
   id: string;
@@ -85,7 +86,10 @@ export default function RoomPage() {
           router.replace("/");
         }, 1600);
       }
-      if (data) setGame({ ...(data as GameRow), state: normalizeGameState((data as GameRow).state) });
+      if (data) {
+        rememberRoomCode(roomCode);
+        setGame({ ...(data as GameRow), state: normalizeGameState((data as GameRow).state) });
+      }
       setIsLoadingGame(false);
     }
 
@@ -158,6 +162,7 @@ export default function RoomPage() {
       const nextState = applyMove(game.state, { type: "join", player });
       setGame({ ...game, state: normalizeGameState(nextState) });
       await saveState(nextState);
+      rememberRoomCode(roomCode);
       if (nextState.players.length === 2 && readStoredBoolean(SOUND_ENABLED_KEY, true)) {
         playRoomReadyChime();
       }
@@ -195,7 +200,12 @@ export default function RoomPage() {
     return (
       <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center p-6">
         <div className="rounded-3xl border border-amber-100/10 bg-slate-900 p-6 shadow-xl">
-          <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Joining room</p>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Joining room</p>
+            <button onClick={() => router.push("/")} className="rounded-xl bg-slate-800 px-3 py-2 text-sm font-bold text-slate-100">
+              Home
+            </button>
+          </div>
           <h1 className="mt-2 text-4xl font-black">Room {roomCode}</h1>
           <p className="mt-3 text-slate-300">Loading your room and preparing your seat...</p>
           <div className="mt-6 h-2 w-full overflow-hidden rounded-full bg-slate-800">
@@ -211,7 +221,12 @@ export default function RoomPage() {
       return (
         <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center p-6">
           <div className="rounded-3xl border border-amber-100/10 bg-slate-900 p-6 shadow-xl">
-            <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Private room</p>
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Private room</p>
+              <button onClick={() => router.push("/")} className="rounded-xl bg-slate-800 px-3 py-2 text-sm font-bold text-slate-100">
+                Home
+              </button>
+            </div>
             <h1 className="mt-2 text-4xl font-black">Room {roomCode}</h1>
             <p className="mt-3 text-slate-300">This room is full.</p>
           </div>
@@ -225,7 +240,12 @@ export default function RoomPage() {
     return (
       <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center p-6">
         <div className="rounded-3xl border border-amber-100/10 bg-slate-900 p-6 shadow-xl">
-          <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Private room</p>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Private room</p>
+            <button onClick={() => router.push("/")} className="rounded-xl bg-slate-800 px-3 py-2 text-sm font-bold text-slate-100">
+              Home
+            </button>
+          </div>
           <h1 className="mt-2 text-4xl font-black">Join Room {roomCode}</h1>
           <p className="mt-3 text-slate-300">Enter your name, then continue into the room.</p>
           <input

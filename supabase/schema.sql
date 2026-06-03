@@ -26,6 +26,11 @@ to anon
 using (true)
 with check (true);
 
+create policy "Anyone can delete games"
+on public.games for delete
+to anon
+using (true);
+
 create or replace function public.set_updated_at()
 returns trigger as $$
 begin

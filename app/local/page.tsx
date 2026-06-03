@@ -25,6 +25,7 @@ const SIGNAL_PREFIX = "LEX1.";
 const LOCAL_MODULES = ["base", "long-journey"];
 const LOCAL_ROLE_KEY = "lost-expeditions-local-role";
 const LOCAL_NAME_PREFIX = "lost-expeditions-local-name";
+const LOCAL_DEVICE_KEY = "lost-expeditions-local-device-id";
 
 function getDefaultLocalName(role: LocalRole) {
   return role === "host" ? "Neil" : "Wife";
@@ -65,13 +66,12 @@ async function copyTextToClipboard(text: string) {
 }
 
 function createLocalPlayerId(role: LocalRole) {
-  const key = "lost-expeditions-local-device-id";
-  let deviceId = window.localStorage.getItem(key);
+  let deviceId = window.localStorage.getItem(LOCAL_DEVICE_KEY);
   if (!deviceId) {
     deviceId =
       globalThis.crypto?.randomUUID?.() ??
       `device-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    window.localStorage.setItem(key, deviceId);
+    window.localStorage.setItem(LOCAL_DEVICE_KEY, deviceId);
   }
 
   return `${role}-${deviceId}`;
@@ -216,6 +216,37 @@ export default function LocalPage() {
         ? "Create a local table, then let the second phone scan your offer."
         : "Scan or paste the host offer, then show your answer back."
     );
+    setError("");
+  }
+
+  function resetLocalTable() {
+    const confirmed = window.confirm("Delete this local table and clear the remembered local seats?");
+    if (!confirmed) return;
+
+    channelRef.current?.close();
+    peerRef.current?.close();
+    channelRef.current = null;
+    peerRef.current = null;
+    roleRef.current = null;
+    playerRef.current = null;
+    gameStateRef.current = null;
+
+    window.localStorage.removeItem(LOCAL_ROLE_KEY);
+    window.localStorage.removeItem(`${LOCAL_NAME_PREFIX}-host`);
+    window.localStorage.removeItem(`${LOCAL_NAME_PREFIX}-guest`);
+    window.localStorage.removeItem(LOCAL_DEVICE_KEY);
+
+    setRole(null);
+    setPlayerName("");
+    setPlayerId("");
+    setStage("idle");
+    setStatusText("Choose who hosts the local table.");
+    setOfferToken("");
+    setAnswerToken("");
+    setRemoteSignalText("");
+    setGameState(null);
+    setScannerMode(null);
+    setToastMessage("");
     setError("");
   }
 
@@ -443,9 +474,16 @@ export default function LocalPage() {
           <p className="text-sm uppercase tracking-[0.35em] text-slate-400">Offline nearby mode</p>
           <h1 className="mt-1 text-3xl font-black md:text-5xl">Local Play</h1>
         </div>
-        <Link href="/" className="rounded-xl bg-slate-800 px-4 py-2 font-bold text-slate-100">
-          Home
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/" className="rounded-xl bg-slate-800 px-4 py-2 font-bold text-slate-100">
+            Home
+          </Link>
+          {(role || gameState || offerToken || answerToken || stage !== "idle") && (
+            <button onClick={resetLocalTable} className="rounded-xl bg-red-200 px-4 py-2 font-bold text-slate-950">
+              Delete local table
+            </button>
+          )}
+        </div>
       </div>
 
       {showPairingSetup && (

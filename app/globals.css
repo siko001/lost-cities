@@ -7,6 +7,31 @@ body {
   color: #f8fafc;
 }
 
+button {
+  transition:
+    transform 180ms ease,
+    filter 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+  will-change: transform;
+}
+
+button:not(:disabled):hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px) scale(0.99);
+}
+
+button:not(:disabled):focus-visible {
+  outline: 2px solid rgba(251, 191, 36, 0.65);
+  outline-offset: 3px;
+}
+
 button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
