@@ -1,4 +1,4 @@
-const CACHE_NAME = "lost-expeditions-v1";
+const CACHE_NAME = "lost-expeditions-v2";
 const APP_SHELL = [
   "/",
   "/local",

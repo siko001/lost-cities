@@ -23,6 +23,46 @@ type BarcodeDetectorConstructor = new (options?: { formats?: string[] }) => Barc
 
 const SIGNAL_PREFIX = "LEX1.";
 const LOCAL_MODULES = ["base", "long-journey"];
+const LOCAL_ROLE_KEY = "lost-expeditions-local-role";
+const LOCAL_NAME_PREFIX = "lost-expeditions-local-name";
+
+function getDefaultLocalName(role: LocalRole) {
+  return role === "host" ? "Neil" : "Wife";
+}
+
+function getStoredLocalName(role: LocalRole) {
+  return window.localStorage.getItem(`${LOCAL_NAME_PREFIX}-${role}`) ?? getDefaultLocalName(role);
+}
+
+function rememberLocalIdentity(role: LocalRole, name: string) {
+  const trimmedName = name.trim().slice(0, 24);
+  window.localStorage.setItem(LOCAL_ROLE_KEY, role);
+  window.localStorage.setItem(`${LOCAL_NAME_PREFIX}-${role}`, trimmedName);
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {}
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+  const copied = document.execCommand("copy");
+  document.body.removeChild(textarea);
+
+  return copied;
+}
 
 function createLocalPlayerId(role: LocalRole) {
   const key = "lost-expeditions-local-device-id";
@@ -118,6 +158,7 @@ export default function LocalPage() {
   const [remoteSignalText, setRemoteSignalText] = useState("");
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [scannerMode, setScannerMode] = useState<"offer" | "answer" | null>(null);
+  const [toastMessage, setToastMessage] = useState("");
   const [error, setError] = useState("");
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const channelRef = useRef<RTCDataChannel | null>(null);
@@ -140,11 +181,36 @@ export default function LocalPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!toastMessage) return;
+
+    const timeout = window.setTimeout(() => {
+      setToastMessage("");
+    }, 2600);
+
+    return () => window.clearTimeout(timeout);
+  }, [toastMessage]);
+
+  useEffect(() => {
+    const rememberedRole = window.localStorage.getItem(LOCAL_ROLE_KEY);
+    if (rememberedRole !== "host" && rememberedRole !== "guest") return;
+
+    const nextPlayerId = createLocalPlayerId(rememberedRole);
+    setRole(rememberedRole);
+    setPlayerId(nextPlayerId);
+    setPlayerName(getStoredLocalName(rememberedRole));
+    setStatusText(
+      rememberedRole === "host"
+        ? "Your host seat is remembered. Create a fresh local table to reconnect."
+        : "Your join seat is remembered. Paste or scan the host offer to reconnect."
+    );
+  }, []);
+
   function chooseRole(nextRole: LocalRole) {
     const nextPlayerId = createLocalPlayerId(nextRole);
     setRole(nextRole);
     setPlayerId(nextPlayerId);
-    setPlayerName(nextRole === "host" ? "Neil" : "Wife");
+    setPlayerName(getStoredLocalName(nextRole));
     setStatusText(
       nextRole === "host"
         ? "Create a local table, then let the second phone scan your offer."
@@ -249,6 +315,7 @@ export default function LocalPage() {
       setStatusText("Creating local WebRTC offer...");
       const hostPlayer: Player = { id: playerId, name: playerName.trim().slice(0, 24) };
       playerRef.current = hostPlayer;
+      rememberLocalIdentity("host", hostPlayer.name);
 
       let nextState = createInitialGame("LOCAL", LOCAL_MODULES);
       nextState = applyMove(nextState, { type: "join", player: hostPlayer });
@@ -291,6 +358,7 @@ export default function LocalPage() {
 
       const guestPlayer: Player = { id: playerId, name: playerName.trim().slice(0, 24) };
       playerRef.current = guestPlayer;
+      rememberLocalIdentity("guest", guestPlayer.name);
 
       const peer = createPeer();
       peer.addEventListener("datachannel", (event) => attachDataChannel(event.channel));
@@ -345,12 +413,14 @@ export default function LocalPage() {
   }
 
   async function copyToken(token: string) {
-    try {
-      await navigator.clipboard.writeText(token);
+    if (await copyTextToClipboard(token)) {
       setStatusText("Pairing token copied.");
-    } catch {
-      setStatusText("Could not copy automatically. Select the token text manually.");
+      setToastMessage("Pairing token copied.");
+      return;
     }
+
+    setStatusText("Could not copy automatically. Select the token text manually.");
+    setToastMessage("Could not copy. Select the token manually.");
   }
 
   async function commitLocalState(nextState: GameState) {
@@ -362,6 +432,7 @@ export default function LocalPage() {
   }
 
   const connectionReady = stage === "connected";
+  const showPairingSetup = !connectionReady || !gameState || !playerId;
   const canCreateHostOffer = role === "host" && stage === "idle";
   const canCreateGuestAnswer = role === "guest" && (stage === "idle" || stage === "waiting-signal");
 
@@ -377,155 +448,162 @@ export default function LocalPage() {
         </Link>
       </div>
 
-      <section className="mb-5 rounded-3xl border border-amber-200/20 bg-amber-950/30 p-4 text-amber-100 shadow-xl">
-        <h2 className="text-xl font-black">How this works</h2>
-        <p className="mt-2 text-sm text-amber-50/90">
-          No Supabase and no internet are used after the app is installed. Put both phones on the same hotspot/Wi‑Fi,
-          exchange the offer and answer QR codes, then the game syncs phone-to-phone.
-        </p>
-      </section>
+      {showPairingSetup && (
+        <>
+          {/* <section className="mb-5 rounded-3xl border border-amber-200/20 bg-amber-950/30 p-4 text-amber-100 shadow-xl">
+            <h2 className="text-xl font-black">How this works</h2>
+            <p className="mt-2 text-sm text-amber-50/90">
+              No Supabase and no internet are used after the app is installed. Put both phones on the same hotspot/Wi‑Fi,
+              exchange the offer and answer tokens, then the game syncs phone-to-phone.
+            </p>
+          </section> */}
 
-      <section className="mb-5 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-5 shadow-xl">
-          <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Setup</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <button
-              onClick={() => chooseRole("host")}
-              disabled={stage !== "idle" && role !== "host"}
-              className={`rounded-2xl px-5 py-4 text-left font-bold shadow-xl transition ${
-                role === "host" ? "bg-amber-200 text-slate-950" : "bg-slate-800 text-slate-100"
-              } disabled:cursor-not-allowed disabled:opacity-40`}
-            >
-              Host on this phone
-              <span className="mt-1 block text-sm font-medium opacity-75">Creates the table and first QR.</span>
-            </button>
-            <button
-              onClick={() => chooseRole("guest")}
-              disabled={stage !== "idle" && role !== "guest"}
-              className={`rounded-2xl px-5 py-4 text-left font-bold shadow-xl transition ${
-                role === "guest" ? "bg-amber-200 text-slate-950" : "bg-slate-800 text-slate-100"
-              } disabled:cursor-not-allowed disabled:opacity-40`}
-            >
-              Join this phone
-              <span className="mt-1 block text-sm font-medium opacity-75">Scans/pastes the host QR.</span>
-            </button>
-          </div>
-
-          {role && (
-            <div className="mt-4">
-              <label className="text-sm font-bold text-slate-200" htmlFor="local-name">
-                Your name
-              </label>
-              <input
-                id="local-name"
-                value={playerName}
-                onChange={(event) => setPlayerName(event.target.value)}
-                disabled={stage !== "idle"}
-                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 outline-none disabled:opacity-60"
-                maxLength={24}
-              />
-            </div>
-          )}
-
-          {canCreateHostOffer && (
-            <button onClick={createHostOffer} className="mt-4 w-full rounded-xl bg-white px-5 py-3 font-bold text-slate-950">
-              Create Local Table
-            </button>
-          )}
-
-          {role === "guest" && (
-            <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/50 p-4">
-              <p className="text-sm font-bold text-slate-200">Host offer</p>
-              <textarea
-                value={remoteSignalText}
-                onChange={(event) => setRemoteSignalText(event.target.value)}
-                placeholder="Paste the host offer token here..."
-                rows={4}
-                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 outline-none"
-              />
-              <div className="mt-3 flex flex-wrap gap-2">
+          <section className="mb-5 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
+            <div className="rounded-3xl border border-white/10 bg-slate-900 p-5 shadow-xl">
+              <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Setup</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <button
-                  onClick={() => setScannerMode("offer")}
-                  className="rounded-xl bg-slate-800 px-4 py-2 font-bold text-slate-100"
+                  onClick={() => chooseRole("host")}
+                  disabled={stage !== "idle" && role !== "host"}
+                  className={`rounded-2xl px-5 py-4 text-left font-bold shadow-xl transition ${
+                    role === "host" ? "bg-amber-200 text-slate-950" : "bg-slate-800 text-slate-100"
+                  } disabled:cursor-not-allowed disabled:opacity-40`}
                 >
-                  Scan Host QR
+                  Host on this phone
+                  <span className="mt-1 block text-sm font-medium opacity-75">Creates the table and first token.</span>
                 </button>
                 <button
-                  onClick={() => createGuestAnswer()}
-                  disabled={!remoteSignalText.trim() || !canCreateGuestAnswer}
-                  className="rounded-xl bg-white px-4 py-2 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => chooseRole("guest")}
+                  disabled={stage !== "idle" && role !== "guest"}
+                  className={`rounded-2xl px-5 py-4 text-left font-bold shadow-xl transition ${
+                    role === "guest" ? "bg-amber-200 text-slate-950" : "bg-slate-800 text-slate-100"
+                  } disabled:cursor-not-allowed disabled:opacity-40`}
                 >
-                  Create Answer
+                  Join this phone
+                  <span className="mt-1 block text-sm font-medium opacity-75">Pastes or scans the host token.</span>
                 </button>
               </div>
-            </div>
-          )}
 
-          {role === "host" && offerToken && (
-            <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/50 p-4">
-              <p className="text-sm font-bold text-slate-200">Guest answer</p>
-              <textarea
-                value={remoteSignalText}
-                onChange={(event) => setRemoteSignalText(event.target.value)}
-                placeholder="Paste the guest answer token here..."
-                rows={4}
-                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 outline-none"
-              />
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  onClick={() => setScannerMode("answer")}
-                  className="rounded-xl bg-slate-800 px-4 py-2 font-bold text-slate-100"
-                >
-                  Scan Answer QR
+              {role && (
+                <div className="mt-4">
+                  <label className="text-sm font-bold text-slate-200" htmlFor="local-name">
+                    Your name
+                  </label>
+                  <input
+                    id="local-name"
+                    value={playerName}
+                    onChange={(event) => setPlayerName(event.target.value)}
+                    disabled={stage !== "idle"}
+                    className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 outline-none disabled:opacity-60"
+                    maxLength={24}
+                  />
+                  <p className="mt-2 text-xs text-slate-400">This seat and name are remembered on this phone.</p>
+                </div>
+              )}
+
+              {canCreateHostOffer && (
+                <button onClick={createHostOffer} className="mt-4 w-full rounded-xl bg-white px-5 py-3 font-bold text-slate-950">
+                  Create Local Table
                 </button>
-                <button
-                  onClick={() => acceptGuestAnswer()}
-                  disabled={!remoteSignalText.trim() || stage !== "waiting-signal"}
-                  className="rounded-xl bg-white px-4 py-2 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Accept Answer
-                </button>
+              )}
+
+              {role === "guest" && (
+                <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                  <p className="text-sm font-bold text-slate-200">Host offer token</p>
+                  <textarea
+                    value={remoteSignalText}
+                    onChange={(event) => setRemoteSignalText(event.target.value)}
+                    placeholder="Paste the host offer token here..."
+                    rows={4}
+                    className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 outline-none"
+                  />
+                  <p className="mt-2 text-xs text-slate-400">Safari may not support QR scanning here. Copy/paste is the reliable path.</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setScannerMode("offer")}
+                      className="rounded-xl bg-slate-800 px-4 py-2 font-bold text-slate-100"
+                    >
+                      Camera
+                    </button>
+                    <button
+                      onClick={() => createGuestAnswer()}
+                      disabled={!remoteSignalText.trim() || !canCreateGuestAnswer}
+                      className="rounded-xl bg-white px-4 py-2 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Create Answer
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {role === "host" && offerToken && (
+                <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                  <p className="text-sm font-bold text-slate-200">Guest answer token</p>
+                  <textarea
+                    value={remoteSignalText}
+                    onChange={(event) => setRemoteSignalText(event.target.value)}
+                    placeholder="Paste the guest answer token here..."
+                    rows={4}
+                    className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 outline-none"
+                  />
+                  <p className="mt-2 text-xs text-slate-400">Paste the fresh answer from the other phone, then accept it once.</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setScannerMode("answer")}
+                      className="rounded-xl bg-slate-800 px-4 py-2 font-bold text-slate-100"
+                    >
+                      Try Camera Scan
+                    </button>
+                    <button
+                      onClick={() => acceptGuestAnswer()}
+                      disabled={!remoteSignalText.trim() || stage !== "waiting-signal"}
+                      className="rounded-xl bg-white px-4 py-2 font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Accept Answer
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-400">Status</p>
+                <p className="mt-2 text-slate-200">{statusText}</p>
+                {error && <p className="mt-3 rounded-xl bg-red-950 p-3 text-sm text-red-200">{error}</p>}
               </div>
             </div>
-          )}
 
-          <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/50 p-4">
-            <p className="text-sm uppercase tracking-[0.25em] text-slate-400">Status</p>
-            <p className="mt-2 text-slate-200">{statusText}</p>
-            {error && <p className="mt-3 rounded-xl bg-red-950 p-3 text-sm text-red-200">{error}</p>}
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-slate-900 p-5 shadow-xl">
-          <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Pairing QR</p>
-          {role === "host" && offerToken && (
-            <SignalCard
-              title="1. Second phone scans this offer"
-              token={offerToken}
-              buttonLabel="Copy Offer Token"
-              onCopy={() => copyToken(offerToken)}
-            />
-          )}
-          {role === "guest" && answerToken && (
-            <SignalCard
-              title="2. Host phone scans this answer"
-              token={answerToken}
-              buttonLabel="Copy Answer Token"
-              onCopy={() => copyToken(answerToken)}
-            />
-          )}
-          {!offerToken && !answerToken && (
-            <div className="flex min-h-[320px] items-center justify-center rounded-3xl border border-dashed border-white/10 bg-slate-950/40 p-8 text-center text-slate-400">
-              Choose host or join, then create the first pairing QR.
+            <div className="rounded-3xl border border-white/10 bg-slate-900 p-5 shadow-xl">
+              <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Pairing token</p>
+              {role === "host" && offerToken && (
+                <SignalCard
+                  title="1. Second phone uses this offer"
+                  token={offerToken}
+                  buttonLabel="Copy Offer Token"
+                  onCopy={() => copyToken(offerToken)}
+                />
+              )}
+              {role === "guest" && answerToken && (
+                <SignalCard
+                  title="2. Host phone uses this answer"
+                  token={answerToken}
+                  buttonLabel="Copy Answer Token"
+                  onCopy={() => copyToken(answerToken)}
+                />
+              )}
+              {!offerToken && !answerToken && (
+                <div className="flex min-h-[320px] items-center justify-center rounded-3xl border border-dashed border-white/10 bg-slate-950/40 p-8 text-center text-slate-400">
+                  Choose host or join, then create the first pairing token.
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      </section>
+          </section>
+        </>
+      )}
 
       {connectionReady && gameState && playerId && (
-        <section className="rounded-3xl border border-emerald-200/20 bg-emerald-950/20 p-3 shadow-xl">
-          <p className="mb-3 rounded-2xl bg-emerald-950/80 px-4 py-3 text-sm text-emerald-100">
-            Local link active. You can now play without Supabase or internet.
+        <section>
+          <p className="mb-3 rounded-2xl border border-emerald-200/20 bg-emerald-950/70 px-4 py-3 text-sm text-emerald-100 shadow-xl">
+            Local link active. Pairing is hidden now; this is the normal game board.
           </p>
           <GameBoard state={gameState} playerId={playerId} onStateChange={commitLocalState} />
         </section>
@@ -546,6 +624,30 @@ export default function LocalPage() {
           }}
         />
       )}
+
+      {toastMessage && (
+        <div
+          className="fixed bottom-4 left-4 right-4 z-[1300] mx-auto max-w-sm rounded-2xl border border-emerald-200/20 bg-slate-950/95 px-4 py-3 text-center text-sm font-bold text-emerald-100 shadow-2xl backdrop-blur"
+          role="status"
+          aria-live="polite"
+          style={{ animation: "toast-rise 220ms ease-out" }}
+        >
+          {toastMessage}
+        </div>
+      )}
+
+      <style jsx global>{`
+        @keyframes toast-rise {
+          from {
+            opacity: 0;
+            transform: translateY(12px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </main>
   );
 }
@@ -564,20 +666,40 @@ function SignalCard({
   return (
     <div>
       <h2 className="text-xl font-black text-slate-100">{title}</h2>
-      <div className="mt-4 flex justify-center rounded-3xl bg-white p-3">
-        <QRCodeCanvas value={token} size={340} level="L" includeMargin />
+      <div className="mt-4 overflow-hidden rounded-[2rem] border border-white/20 bg-gradient-to-br from-slate-800 via-slate-800 to-slate-950 p-4 text-slate-950 shadow-2xl">
+        {/* <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.35em] text-amber-900/70">Lost Expeditions</p>
+            <p className="text-sm font-bold text-slate-700">Nearby pairing pass</p>
+          </div>
+          <div className="rounded-2xl border-2 border-slate-950 bg-slate-950 px-4 py-2 text-xl font-black tracking-[0.2em] text-amber-100 shadow-lg">
+            LEX
+          </div>
+        </div> */}
+        <div className="rounded-[1.5rem] border border-slate-950/10 bg-slate-800 p-3 shadow-inner">
+          <div className="flex justify-center rounded-[1.15rem] bg-white">
+            <QRCodeCanvas value={token} size={320} level="L" includeMargin fgColor="#0f172a" bgColor="#ffffff" />
+          </div>
+        </div>
+        {/* <div className="mt-3 flex items-center justify-between gap-3 text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">
+          <span>Offer/Answer</span>
+          <span>Local Wi‑Fi</span>
+        </div> */}
       </div>
-      <textarea
-        readOnly
-        value={token}
-        rows={5}
-        className="mt-4 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-300 outline-none"
-      />
       <button onClick={onCopy} className="mt-3 w-full rounded-xl bg-white px-4 py-3 font-bold text-slate-950">
         {buttonLabel}
       </button>
+      <details className="mt-3 rounded-2xl border border-slate-700 bg-slate-950/70 p-3">
+        <summary className="cursor-pointer select-none text-sm font-bold text-slate-200">Show raw token</summary>
+        <textarea
+          readOnly
+          value={token}
+          rows={5}
+          className="mt-3 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-300 outline-none"
+        />
+      </details>
       <p className="mt-3 text-sm text-slate-400">
-        If the QR is too dense for the camera, copy and paste the token instead.
+        If the QR is too dense for the camera, use Copy Token. If copying is blocked, open the raw token.
       </p>
     </div>
   );
@@ -611,7 +733,7 @@ function SignalScanner({
 
         const BarcodeDetectorClass = (window as Window & { BarcodeDetector?: BarcodeDetectorConstructor }).BarcodeDetector;
         if (!BarcodeDetectorClass) {
-          setScannerError("This browser cannot scan QR codes here. Paste the token instead.");
+          setScannerError("This browser cannot scan QR codes in this app yet. Copy/paste the token instead.");
           return;
         }
 
